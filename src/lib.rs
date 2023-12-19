@@ -408,6 +408,7 @@ impl TuiLogger {
         }
     }
 }
+const MAX_EVENTS_HELD: usize = 10000;
 lazy_static! {
     static ref TUI_LOGGER: TuiLogger = {
         let hs = HotSelect {
@@ -419,7 +420,7 @@ lazy_static! {
         };
         let tli = TuiLoggerInner {
             hot_depth: 1000,
-            events: CircularBuffer::new(10000),
+            events: CircularBuffer::new(MAX_EVENTS_HELD),
             total_events: 0,
             dump: None,
             default: LevelFilter::Info,
@@ -1405,8 +1406,10 @@ impl<'a> TuiLoggerSmartWidget<'a> {
 impl<'a> Widget for TuiLoggerSmartWidget<'a> {
     /// Nothing to draw for combo widget
     fn render(self, area: Rect, buf: &mut Buffer) {
+        let entries;
         let entries_s = {
             let mut tui_lock = TUI_LOGGER.inner.lock();
+            entries = tui_lock.total_events;
             let first_timestamp = tui_lock
                 .events
                 .iter()
@@ -1436,7 +1439,7 @@ impl<'a> Widget for TuiLoggerSmartWidget<'a> {
         let mut title_log = self.title_log.clone();
         title_log
             .spans
-            .push(format!(" [log={:.1}/s]", entries_s).into());
+            .push(format!("Total: {}/{} ({:.1}/s)", if entries < MAX_EVENTS_HELD { entries } else {MAX_EVENTS_HELD}, entries, entries_s).into());
 
         let hide_target = self.state.lock().hide_target;
         if hide_target {
