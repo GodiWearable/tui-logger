@@ -549,6 +549,9 @@ pub enum TuiWidgetEvent {
     PrevPageKey,
     NextPageKey,
     EscapeKey,
+    FilterKey,
+    FilterAdd(char),
+    FilterPop,
 }
 
 #[derive(Default)]
@@ -568,6 +571,8 @@ struct TuiWidgetInnerState {
     hide_off: bool,
     hide_target: bool,
     focus_selected: bool,
+    text_filter_focused: bool,
+    text_filter: String
 }
 impl TuiWidgetInnerState {
     pub fn new() -> TuiWidgetInnerState {
@@ -584,6 +589,15 @@ impl TuiWidgetInnerState {
             }
             FocusKey => {
                 self.focus_selected ^= true;
+            }
+            FilterKey => {
+                self.text_filter_focused ^= true;
+            }
+            FilterAdd(char) => {
+                self.text_filter.push(char);
+            }
+            FilterPop => {
+                self.text_filter.pop();
             }
             UpKey => {
                 if !self.hide_target && self.selected > 0 {
@@ -654,6 +668,10 @@ impl TuiWidgetState {
     }
     pub fn transition(&mut self, event: &TuiWidgetEvent) {
         self.inner.lock().transition(event);
+    }
+
+    pub fn get_filter_focused(&mut self) -> bool {
+        self.inner.lock().text_filter_focused
     }
 }
 
@@ -1162,6 +1180,11 @@ impl<'b> Widget for TuiLoggerWidget<'b> {
                         }
                     }
                 }
+                if state.text_filter.len() > 0 {
+                    if !&evt.msg.to_lowercase().contains(&state.text_filter.to_lowercase()) {
+                        continue;
+                    }
+                }
                 // Here all filters have been applied,
                 // So check, if user is paging through history
                 if let Some(timestamp) = opt_timestamp_bottom.as_ref() {
@@ -1479,13 +1502,19 @@ impl<'a> Widget for TuiLoggerSmartWidget<'a> {
                     }
                 }
             }
-            let chunks = Layout::default()
+            let layout = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints(vec![
                     Constraint::Length(width as u16 + 6 + 2),
                     Constraint::Min(10),
                 ])
                 .split(area);
+            let main_area = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(vec![
+                    Constraint::Length(3),
+                    Constraint::Min(3)
+                ]).split(layout[1]);
             let tui_ltw = TuiLoggerTargetWidget::default()
                 .block(
                     Block::default()
@@ -1500,7 +1529,22 @@ impl<'a> Widget for TuiLoggerSmartWidget<'a> {
                 .opt_style_hide(self.style_hide)
                 .opt_style_show(self.style_show)
                 .inner_state(self.state.clone());
-            tui_ltw.render(chunks[0], buf);
+            tui_ltw.render(layout[0], buf);
+            {
+                let state = self.state.lock();
+                let text_filter = Paragraph::new(
+                    state.text_filter.clone()
+                )
+                    .block(
+                        Block::default().borders(Borders::all())
+                            .title("Text Filter")
+                    )
+                    .style(match state.text_filter_focused {
+                        true => Style::default().bg(Color::LightYellow).fg(Color::Black),
+                        false => Style::default()
+                    });
+                text_filter.render(main_area[0], buf);
+            }
             let tui_lw = TuiLoggerWidget::default()
                 .block(
                     Block::default()
@@ -1522,7 +1566,7 @@ impl<'a> Widget for TuiLoggerSmartWidget<'a> {
                 .opt_output_file(self.format_output_file)
                 .opt_output_line(self.format_output_line)
                 .inner_state(self.state.clone());
-            tui_lw.render(chunks[1], buf);
+            tui_lw.render(main_area[1], buf);
         }
     }
 }
